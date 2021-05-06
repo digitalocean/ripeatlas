@@ -122,6 +122,7 @@ func (s *Stream) MeasurementLatest(p Params) (<-chan *measurement.Result, error)
 // MeasurementLatestWithChan streams the latest measurement results, as described
 // by the Params, and sends them to the supplied channel. The channel supplied should
 // not be closed, but should be reused between connections of the same measurement.
+// A channel is returned that will receive an empty struct and be closed when the connection has been closed.
 //
 // Params available are:
 //
@@ -144,11 +145,13 @@ func (s *Stream) MeasurementLatest(p Params) (<-chan *measurement.Result, error)
 // "sendBacklog": none - Unimplemented
 //
 // "buffering": none - Unimplemented
-func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result) error {
+func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result) (<-chan struct{}, error) {
     c, subscribe, err := subscribeAndDial(p)
     if err != nil {
-        return err
+        return nil, err
     }
+
+    closedChan := make(chan struct{})
 
     err = c.On("atlas_error", func(h *gosocketio.Channel, args interface{}) {
         r := &measurement.Result{ParseError: fmt.Errorf("atlas_error: %v", args)}
@@ -156,14 +159,14 @@ func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result
         c.Close()
     })
     if err != nil {
-        return fmt.Errorf("c.On(atlas_error): %s", err.Error())
+        return closedChan, fmt.Errorf("c.On(atlas_error): %s", err.Error())
     }
 
     err = c.On("atlas_result", func(h *gosocketio.Channel, r measurement.Result) {
         ch <- &r
     })
     if err != nil {
-        return fmt.Errorf("c.On(atlas_result): %s", err.Error())
+        return closedChan, fmt.Errorf("c.On(atlas_result): %s", err.Error())
     }
 
     err = c.On(gosocketio.OnConnection, func(h *gosocketio.Channel) {
@@ -175,10 +178,19 @@ func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result
         }
     })
     if err != nil {
-        return fmt.Errorf("c.On(connect): %s", err.Error())
+        return closedChan, fmt.Errorf("c.On(connect): %s", err.Error())
     }
 
-    return nil
+    // This handler is called by the c.Close() method on the gosocketio.Client
+    err = c.On(gosocketio.OnDisconnection, func(h *gosocketio.Channel) {
+        closedChan <- struct{}{}
+        close(closedChan)
+    })
+    if err != nil {
+        return closedChan, fmt.Errorf("c.On(disconnect): %s", err.Error())
+    }
+
+    return closedChan, nil
 }
 
 // trySend is a hack to avoid panicking when sending to a closed channel
@@ -198,8 +210,9 @@ func (s *Stream) MeasurementResults(p Params) (<-chan *measurement.Result, error
 }
 
 // MeasurementResultsWithChan will just call MeasurementLatestWithChan since Stream streams the latest results
-// (more or less, backlog sending is available). The supplied channel should be reused and not closed
-func (s *Stream) MeasurementResultsWithChan(p Params, ch chan *measurement.Result) error {
+// (more or less, backlog sending is available). The supplied channel should be reused and not closed. A channel is
+// returned that will receive an empty struct and be closed when the connection is closed.
+func (s *Stream) MeasurementResultsWithChan(p Params, ch chan *measurement.Result) (<-chan struct{}, error) {
     return s.MeasurementLatestWithChan(p, ch)
 }
 
