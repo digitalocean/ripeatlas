@@ -145,7 +145,7 @@ func (s *Stream) MeasurementLatest(p Params) (<-chan *measurement.Result, error)
 // "sendBacklog": none - Unimplemented
 //
 // "buffering": none - Unimplemented
-func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result) (<-chan struct{}, error) {
+func (s *Stream) MeasurementLatestWithChan(p Params, ch chan<- *measurement.Result) (<-chan struct{}, error) {
     c, subscribe, err := subscribeAndDial(p)
     if err != nil {
         return nil, err
@@ -194,7 +194,7 @@ func (s *Stream) MeasurementLatestWithChan(p Params, ch chan *measurement.Result
 }
 
 // trySend is a hack to avoid panicking when sending to a closed channel
-func trySend(ch chan *measurement.Result, r *measurement.Result) {
+func trySend(ch chan<- *measurement.Result, r *measurement.Result) {
     defer func() {
         recover()
     }()
@@ -212,7 +212,7 @@ func (s *Stream) MeasurementResults(p Params) (<-chan *measurement.Result, error
 // MeasurementResultsWithChan will just call MeasurementLatestWithChan since Stream streams the latest results
 // (more or less, backlog sending is available). The supplied channel should be reused and not closed. A channel is
 // returned that will receive an empty struct and be closed when the connection is closed.
-func (s *Stream) MeasurementResultsWithChan(p Params, ch chan *measurement.Result) (<-chan struct{}, error) {
+func (s *Stream) MeasurementResultsWithChan(p Params, ch chan<- *measurement.Result) (<-chan struct{}, error) {
     return s.MeasurementLatestWithChan(p, ch)
 }
 
