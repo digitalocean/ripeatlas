@@ -31,8 +31,9 @@ import (
 
 // A Stream reads RIPE Atlas data from the streaming API
 // (https://atlas.ripe.net/docs/result-streaming/).
-type Stream struct {
-}
+type Stream struct {}
+
+type StreamClosedEvent struct {}
 
 const (
     StreamUrl = "wss://atlas-stream.ripe.net:443/stream/socket.io/?EIO=3&transport=websocket"
@@ -145,13 +146,13 @@ func (s *Stream) MeasurementLatest(p Params) (<-chan *measurement.Result, error)
 // "sendBacklog": none - Unimplemented
 //
 // "buffering": none - Unimplemented
-func (s *Stream) MeasurementLatestWithChan(p Params, ch chan<- *measurement.Result) (<-chan struct{}, error) {
+func (s *Stream) MeasurementLatestWithChan(p Params, ch chan<- *measurement.Result) (<-chan StreamClosedEvent, error) {
     c, subscribe, err := subscribeAndDial(p)
     if err != nil {
         return nil, err
     }
 
-    closedChan := make(chan struct{})
+    closedChan := make(chan StreamClosedEvent)
 
     err = c.On("atlas_error", func(h *gosocketio.Channel, args interface{}) {
         r := &measurement.Result{ParseError: fmt.Errorf("atlas_error: %v", args)}
@@ -183,7 +184,7 @@ func (s *Stream) MeasurementLatestWithChan(p Params, ch chan<- *measurement.Resu
 
     // This handler is called by the c.Close() method on the gosocketio.Client
     err = c.On(gosocketio.OnDisconnection, func(h *gosocketio.Channel) {
-        closedChan <- struct{}{}
+        closedChan <- StreamClosedEvent{}
         close(closedChan)
     })
     if err != nil {
@@ -212,7 +213,7 @@ func (s *Stream) MeasurementResults(p Params) (<-chan *measurement.Result, error
 // MeasurementResultsWithChan will just call MeasurementLatestWithChan since Stream streams the latest results
 // (more or less, backlog sending is available). The supplied channel should be reused and not closed. A channel is
 // returned that will receive an empty struct and be closed when the connection is closed.
-func (s *Stream) MeasurementResultsWithChan(p Params, ch chan<- *measurement.Result) (<-chan struct{}, error) {
+func (s *Stream) MeasurementResultsWithChan(p Params, ch chan<- *measurement.Result) (<-chan StreamClosedEvent, error) {
     return s.MeasurementLatestWithChan(p, ch)
 }
 
